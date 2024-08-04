@@ -71,6 +71,108 @@ export class Edge {
 	}
 }
 
+export class CanvasGraphDrawer {
+	constructor(canvas) {
+		this.canvas = canvas
+		this.canvas.width = this.canvas.clientWidth
+		this.canvas.height = this.canvas.clientHeight
+		window.addEventListener('resize', e => {
+			const prev_transform = ctx.getTransform()
+			this.canvas.width = this.canvas.clientWidth
+			this.canvas.height = this.canvas.clientHeight
+			this.ctx.setTransform(prev_transform)
+		})
+
+		this.canvas.addEventListener('mousemove', e => {
+			if (e.buttons === 1) {
+				const transform = this.ctx.getTransform()
+				this.ctx.translate(
+					e.movementX / transform.a,
+					e.movementY / transform.d
+				)
+			}
+		})
+
+		this.canvas.addEventListener('wheel', e => {
+			let scale = 1e-2;
+			if (e.deltaY < 0) {
+				scale += 1
+			} else {
+				scale = 1 - scale
+			}
+
+			const transform = this.ctx.getTransform()
+			transform.scaleSelf(
+				scale,
+				scale,
+				1,
+				(e.x - transform.e) / transform.a,
+				(e.y - transform.f) / transform.d
+			)
+			this.ctx.setTransform(transform)
+		})
+
+
+		this.ctx = canvas.getContext("2d")
+	}
+
+	getWidth() {
+		return this.canvas.width
+	}
+
+	getHeight() {
+		return this.canvas.height
+	}
+
+	drawNode(node) {
+		this.ctx.beginPath()
+		this.ctx.arc(node.pos.x, node.pos.y, 5, 0, 2 * Math.PI)
+		this.ctx.stroke()
+		this.ctx.fillText(node.label, node.pos.x + 5, node.pos.y)
+	}
+
+
+	drawEdge({start, end, is_directed}) {
+		const dir = Vector.sub(end.pos, start.pos)
+		const angle = Math.atan2(dir.y, dir.x)
+
+		const draw_start = new Vector(start.pos.x + 5 * Math.cos(angle),
+					      start.pos.y + 5 * Math.sin(angle))
+		const draw_end = new Vector(end.pos.x - 5 * Math.cos(angle),
+					    end.pos.y - 5 * Math.sin(angle))
+		this.ctx.beginPath()
+		this.ctx.moveTo(draw_start.x, draw_start.y)
+		this.ctx.lineTo(draw_end.x, draw_end.y)
+		this.ctx.stroke()
+
+		if (is_directed) {
+			this.ctx.save()
+			const prev_transform = this.ctx.transform;
+
+			this.ctx.translate(draw_end.x, draw_end.y)
+			this.ctx.scale(5, 5)
+			this.ctx.rotate(angle - Math.PI / 2)
+			this.ctx.fillStyle = 'blue'
+
+			this.ctx.beginPath()
+			this.ctx.moveTo(-.5, -1)
+			this.ctx.lineTo(0.5, -1)
+			this.ctx.lineTo(0, 0)
+			this.ctx.lineTo(-.5, -1)
+			this.ctx.fill()
+
+			this.ctx.restore()
+		}
+	}
+
+	clearScreen() {
+		const prev_transform = this.ctx.getTransform()
+		this.ctx.resetTransform()
+		this.ctx.clearRect(0,0, this.canvas.width, this.canvas.height)
+		this.ctx.setTransform(prev_transform)
+	}
+}
+
 export class Graph {
 	constructor() {
 		this.nodes = new Map()
@@ -110,63 +212,19 @@ export class Graph {
 			node_b.addPeer(node_a)
 	}
 
-	init() {
-		const container = document.createElement("div")
-		container.style.position = "relative"
-		document.body.appendChild(container)
-
-		const canvas = document.createElement("canvas")
-
-		canvas.width = window.innerWidth
-		canvas.height = window.innerHeight
-		window.addEventListener('resize', e => {
-			const prev_transform = ctx.getTransform()
-			console.log(prev_transform)
-			canvas.width = window.innerWidth
-			canvas.height = window.innerHeight
-			ctx.setTransform(prev_transform)
-		})
-
-		const ctx = canvas.getContext("2d")
-
-
-		canvas.addEventListener('mousemove', e => {
-			if (e.buttons === 1) {
-				const transform = ctx.getTransform()
-				ctx.translate(e.movementX / transform.a, e.movementY / transform.d)
-			}
-		})
-
-		canvas.addEventListener('wheel', e => {
-			let scale = 1e-2;
-			if (e.deltaY < 0) {
-				scale += 1
-			} else {
-				scale = 1 - scale
-			}
-
-			const transform = ctx.getTransform()
-			transform.scaleSelf(scale, scale, 1, (e.x - transform.e) / transform.a,  (e.y - transform.f) / transform.d)
-			ctx.setTransform(transform)
-		})
-
-		container.appendChild(canvas)
-
+	init(graphDrawer) {
 		for (const n of this.nodes.values()) {
 			n.pos = Vector.rand()
 			n.pos = Vector.mulS(n.pos, .1)
 			n.pos = Vector.addS(n.pos, (1-.1)/ 2)
-			n.pos = Vector.mul(n.pos, new Vector(canvas.width, canvas.height))
+			n.pos = Vector.mul(
+				n.pos,
+				new Vector(graphDrawer.getWidth(), graphDrawer.getHeight())
+			)
 		}
-
-		return {
-			canvas: canvas,
-			ctx: ctx
-		}
-
 	}
 
-	simulate(context, dt) {
+	simulate(graphDrawer, dt) {
 		for (const n of this.nodes.values()) {
 			n.acel = new Vector(0, 0)
 		}
@@ -208,7 +266,13 @@ export class Graph {
 				n.acel = force
 			}
 
-			const dist_vec = Vector.sub(new Vector(context.canvas.width / 2, context.canvas.height / 2), n.pos)
+			const dist_vec = Vector.sub(
+				new Vector(
+					graphDrawer.getWidth() / 2,
+					graphDrawer.getHeight() / 2
+				),
+				n.pos
+			)
 			const dist = Vector.mag(dist_vec)
 			const dir = Vector.norm(dist_vec)
 			if (dist != 0)
@@ -223,79 +287,30 @@ export class Graph {
 		}
 	}
 
-	defaultDrawNode(node, {ctx}) {
-		ctx.beginPath()
-		ctx.arc(node.pos.x, node.pos.y, 5, 0, 2 * Math.PI)
-		ctx.stroke()
-		ctx.fillText(node.label, node.pos.x + 5, node.pos.y)
-	}
-
-	defaultDrawEdge({start, end, is_directed}, {ctx}) {
-		const dir = Vector.sub(end.pos, start.pos)
-		const angle = Math.atan2(dir.y, dir.x)
-
-		const draw_start = new Vector(start.pos.x + 5 * Math.cos(angle),
-					      start.pos.y + 5 * Math.sin(angle))
-		const draw_end = new Vector(end.pos.x - 5 * Math.cos(angle),
-					    end.pos.y - 5 * Math.sin(angle))
-		ctx.beginPath()
-		ctx.moveTo(draw_start.x, draw_start.y)
-		ctx.lineTo(draw_end.x, draw_end.y)
-		ctx.stroke()
-
-		if (is_directed) {
-			ctx.save()
-			const prev_transform = ctx.transform;
-
-			ctx.translate(draw_end.x, draw_end.y)
-			ctx.scale(5, 5)
-			ctx.rotate(angle - Math.PI / 2)
-			ctx.fillStyle = 'blue'
-
-			ctx.beginPath()
-			ctx.moveTo(-.5, -1)
-			ctx.lineTo(0.5, -1)
-			ctx.lineTo(0, 0)
-			ctx.lineTo(-.5, -1)
-			ctx.fill()
-
-			ctx.restore()
-		}
-	}
-
-	draw(context) {
-		const {canvas, ctx} = context
-		const prev_transform = ctx.getTransform()
-		ctx.resetTransform()
-		ctx.clearRect(0,0, canvas.width, canvas.height)
-		ctx.setTransform(prev_transform)
+	draw(graphDrawer) {
+		graphDrawer.clearScreen();
 
 		for (const edge of this.edges) {
-			context.drawEdge(edge, context)
+			graphDrawer.drawEdge(edge)
 		}
 
 		for (const n of this.nodes.values()) {
-			context.drawNode(n, context)
+			graphDrawer.drawNode(n)
 		}
 	}
 
-	display(options) {
-		const ctx = this.init()
-		ctx.drawNode = options?.drawNode ?? this.defaultDrawNode
-		ctx.drawEdge = options?.drawEdge ?? this.defaultDrawEdge
-		this.draw(ctx)
-		//for (let i = 0; i < 60*10; i++) {
-		//	//console.log(i)
-		//	this.simulate(ctx, .05)
-		//}
-		this.draw(ctx)
+	display(graphDrawer) {
+		this.init(graphDrawer)
+		this.draw(graphDrawer)
+
+		this.draw(graphDrawer)
 		const step = (prev) => {
 			window.requestAnimationFrame((t) => {
 				var dt = (t - prev) / 1000
 				if (dt > 0.5)	
 					dt = 0
-				this.simulate(ctx, dt)
-				this.draw(ctx)
+				this.simulate(graphDrawer, dt)
+				this.draw(graphDrawer)
 				step(t)
 			})
 		}
