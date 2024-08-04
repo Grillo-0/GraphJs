@@ -177,6 +177,10 @@ export class Graph {
 	constructor() {
 		this.nodes = new Map()
 		this.edges = new Array()
+		this.spring_constant = 1e2
+		this.spring_length = 30
+		this.repulsive_constant = 1e5
+		this.max_repulsive_force = 1e4
 	}
 
 	addNode(node) {
@@ -236,9 +240,9 @@ export class Graph {
 			const dist = Vector.mag(dist_vec)
 			const dir = Vector.norm(dist_vec)
 
-			if (dist > 30) {
-				n.acel = Vector.sub(n.acel, Vector.mulS(dir, 1e2 * Math.log(dist - 29)))
-				p.acel = Vector.add(p.acel, Vector.mulS(dir, 1e2 * Math.log(dist - 29)))
+			if (dist > this.spring_length) {
+				n.acel = Vector.sub(n.acel, Vector.mulS(dir, this.spring_constant * Math.log(dist - (this.spring_length - 1))))
+				p.acel = Vector.add(p.acel, Vector.mulS(dir, this.spring_constant * Math.log(dist - (this.spring_length - 1))))
 			}
 
 		}
@@ -254,13 +258,13 @@ export class Graph {
 
 				let force
 				if (dist != 0)
-					force = Vector.sub(n.acel, Vector.mulS(dir, 1e5 / (dist * dist) ))
+					force = Vector.sub(n.acel, Vector.mulS(dir, this.repulsive_constant / (dist * dist) ))
 				else {
-					force = Vector.mulS(Vector.norm(force), 1e4)
+					force = Vector.mulS(Vector.norm(force), this.max_repulsive_force)
 				}
 
-				if (Vector.mag(force) > 1e4) {
-					force = Vector.mulS(Vector.norm(force), 1e4)
+				if (Vector.mag(force) > this.max_repulsive_force) {
+					force = Vector.mulS(Vector.norm(force), this.max_repulsive_force)
 				}
 
 				n.acel = force
